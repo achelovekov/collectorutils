@@ -23,7 +23,7 @@ const (
 	Event = 2
 )
 
-type postReqHandler struct {
+type PostReqHandler struct {
 	ESClient *es.Client
 	Filter   Filter
 	Enrich   Enrich
@@ -78,7 +78,9 @@ type Enrich []struct {
 	} `json:"item"`
 }
 
-func esConnect(ipaddr string, port string) (*es.Client, error) {
+type ESClient *es.Client
+
+func ESConnect(ipaddr string, port string) (*es.Client, error) {
 
 	var fulladdress string = "http://" + ipaddr + ":" + port
 
@@ -93,7 +95,7 @@ func esConnect(ipaddr string, port string) (*es.Client, error) {
 	return es, nil
 }
 
-func esPush(esClient *es.Client, indexName string, buf []map[string]interface{}) []byte {
+func ESPush(esClient *es.Client, indexName string, buf []map[string]interface{}) []byte {
 
 	JSONmetaData := `{"index":{"_index":"` + indexName + `"}}`
 
@@ -123,12 +125,10 @@ func esPush(esClient *es.Client, indexName string, buf []map[string]interface{})
 	}
 	defer res.Body.Close()
 
-	fmt.Println(res)
-
 	return JSONRequestData
 }
 
-func toNum(v interface{}) interface{} {
+func ToNum(v interface{}) interface{} {
 	if reflect.ValueOf(v).Type().Kind() == reflect.String {
 		if i, err := strconv.ParseInt(v.(string), 10, 64); err == nil {
 			return i
@@ -140,22 +140,20 @@ func toNum(v interface{}) interface{} {
 	return v
 }
 
-func filterMap(src map[string]interface{}, filter Filter) {
+func FilterMap(src map[string]interface{}, filter Filter) {
 	for _, v := range filter {
 		if _, ok := src[v.Item]; ok {
 			delete(src, v.Item)
-			//fmt.Printf("SUCCESSFULY DELETED - %v\n", v.Item)
 		}
 	}
 }
 
-func enrichMap(src map[string]interface{}, enrich Enrich) {
+func EnrichMap(src map[string]interface{}, enrich Enrich) {
 	for _, v := range enrich {
 		if _, ok := src[v.Item.ItemID]; ok {
 			for _, mV := range v.Item.Mappings {
 				if src[v.Item.ItemID] == mV.Name {
 					src[v.Item.ItemID+"/code"] = mV.Value
-					//fmt.Printf("SUCCESSFULY ENRICHED - %v\n", v.Item.ItemID)
 				}
 			}
 		}
@@ -170,13 +168,13 @@ func PrettyPrint(src map[string]interface{}) {
 	fmt.Printf("Pretty processed output %s\n", string(empJSON))
 }
 
-func copySlice(sli []string) []string {
+func CopySlice(sli []string) []string {
 	newSli := make([]string, len(sli))
 	copy(newSli, sli)
 	return newSli
 }
 
-func copyMap(ma map[string]interface{}) map[string]interface{} {
+func CopyMap(ma map[string]interface{}) map[string]interface{} {
 	newMap := make(map[string]interface{})
 	for k, v := range ma {
 		newMap[k] = v
@@ -184,30 +182,28 @@ func copyMap(ma map[string]interface{}) map[string]interface{} {
 	return newMap
 }
 
-func flattenMap(src map[string]interface{}, path Path, pathIndex int, pathPassed []string, mode int, header map[string]interface{}, buf *[]map[string]interface{}, filter Filter, enrich Enrich) {
-	//fmt.Printf("pathPassed: %v\n", pathPassed)
+func FlattenMap(src map[string]interface{}, path Path, pathIndex int, pathPassed []string, mode int, header map[string]interface{}, buf *[]map[string]interface{}, filter Filter, enrich Enrich) {
 	keysDive := make([]string, 0)
 	keysPass := make([]string, 0)
 	keysCombine := make([]string, 0)
-	pathPassed = copySlice(pathPassed)
+	pathPassed = CopySlice(pathPassed)
 	for k, v := range src {
 		switch sType := reflect.ValueOf(v).Type().Kind(); sType {
 		case reflect.String:
 			if len(pathPassed) == 0 {
-				header[k] = toNum(v)
+				header[k] = ToNum(v)
 			} else if len(pathPassed) == 1 {
-				header[pathPassed[0]+"."+k] = toNum(v)
+				header[pathPassed[0]+"."+k] = ToNum(v)
 			} else {
-				header[pathPassed[len(pathPassed)-mode]+"."+k] = toNum(v)
+				header[pathPassed[len(pathPassed)-mode]+"."+k] = ToNum(v)
 			}
 			
 		case reflect.Float64:
 			if len(pathPassed) == 0 {
-				header[k] = toNum(v)
+				header[k] = ToNum(v)
 			} else if len(pathPassed) == 1 {
-				header[pathPassed[0]+"."+k] = toNum(v)
+				header[pathPassed[0]+"."+k] = ToNum(v)
 			} else {
-				//fmt.Printf("len(pathPassed): %v, mode: %v\n", len(pathPassed), mode)
 				header[pathPassed[len(pathPassed)-mode]+"."+k] = v.(float64)
 			}		
 
@@ -231,10 +227,9 @@ func flattenMap(src map[string]interface{}, path Path, pathIndex int, pathPassed
 	if pathIndex == len(path) {
 		for _, v := range path[pathIndex-1].Node {
 			if pathPassed[len(pathPassed)-1] == v.NodeName && !v.ToCombine {
-				newHeader := copyMap(header)
-				filterMap(newHeader, filter)
-				enrichMap(newHeader, enrich)
-				//PrettyPrint(newHeader)
+				newHeader := CopyMap(header)
+				FilterMap(newHeader, filter)
+				EnrichMap(newHeader, enrich)
 				*buf = append(*buf, newHeader)
 			}
 		}
@@ -249,29 +244,17 @@ func flattenMap(src map[string]interface{}, path Path, pathIndex int, pathPassed
 				switch sType := reflect.ValueOf(src[k]).Type().Kind(); sType {
 				case reflect.Map:
 					src := src[k].(map[string]interface{})
-					flattenMap(src, path, pathIndex+1, pathPassed, mode, header, buf, filter, enrich)
+					FlattenMap(src, path, pathIndex+1, pathPassed, mode, header, buf, filter, enrich)
 				case reflect.Slice:
 					src := reflect.ValueOf(src[k])
 					for i := 0; i < src.Len(); i++ {
 						src := src.Index(i).Interface().(map[string]interface{})
-						flattenMap(src, path, pathIndex+1, pathPassed, mode, header, buf, filter, enrich)
+						FlattenMap(src, path, pathIndex+1, pathPassed, mode, header, buf, filter, enrich)
 					}
 				}
 			}
 		}
 	}
-}
-
-func worker(src map[string]interface{}, ESClient *es.Client, ESIndex string, path Path, mode int, filter Filter, enrich Enrich) {
-		var pathIndex int
-		header := make(map[string]interface{})
-		buf := make([]map[string]interface{}, 0)
-		pathPassed := make([]string, 0)
-
-		//PrettyPrint(src)
-
-		flattenMap(src, path, pathIndex, pathPassed, mode, header, &buf, filter, enrich)
-		esPush(ESClient, ESIndex, buf)
 }
 
 func LoadMDTPaths(fileName string) MDTPaths {
@@ -320,7 +303,7 @@ func LoadMDTPaths(fileName string) MDTPaths {
 	return MDTPaths
 }
 
-func initialize(configFile string) (*es.Client, Config, MDTPaths, Filter, Enrich) {
+func Initialize(configFile string) (*es.Client, Config, MDTPaths, Filter, Enrich) {
 
 	var Config Config
 	var MDTPaths MDTPaths
@@ -368,7 +351,7 @@ func initialize(configFile string) (*es.Client, Config, MDTPaths, Filter, Enrich
 		fmt.Println(err)
 	}
 
-	esClient, error := esConnect(Config.ESHost, Config.ESPort)
+	esClient, error := ESConnect(Config.ESHost, Config.ESPort)
 	if error != nil {
 		log.Fatalf("error: %s", error)
 	}
@@ -376,7 +359,7 @@ func initialize(configFile string) (*es.Client, Config, MDTPaths, Filter, Enrich
 	return esClient, Config, MDTPaths, Filter, Enrich
 }
 
-func getHttpBody(httpRequest *http.Request) map[string]interface{} {
+func GetHttpBody(httpRequest *http.Request) map[string]interface{} {
 	src := make(map[string]interface{})
 	if httpRequest.Method != "POST" {
 		fmt.Println("Is not POST method")
@@ -389,135 +372,4 @@ func getHttpBody(httpRequest *http.Request) map[string]interface{} {
 	}
 
 	return src
-}
-
-
-func (prh *postReqHandler) SysBgp(w http.ResponseWriter, httpRequest *http.Request) {
-	src := getHttpBody(httpRequest)	
-
-	for i := range(prh.MDTPaths["sys/bgp"]) {
-		src := copyMap(src)
-		go worker(src, prh.ESClient, prh.Config.ESIndex, prh.MDTPaths["sys/bgp"][i], Cadence, prh.Filter, prh.Enrich)
-	}	
-}
-
-func (prh *postReqHandler) SysOspf(w http.ResponseWriter, httpRequest *http.Request) {
-	src := getHttpBody(httpRequest)	
-
-	for i := range(prh.MDTPaths["sys/ospf"]) {
-		src := copyMap(src)
-		go worker(src, prh.ESClient, prh.Config.ESIndex, prh.MDTPaths["sys/ospf"][i], Cadence, prh.Filter, prh.Enrich)
-	}	
-}
-
-func (prh *postReqHandler) RIBHandler(w http.ResponseWriter, httpRequest *http.Request) {
-	src := getHttpBody(httpRequest)	
-
-	for i := range(prh.MDTPaths["rib"]) {
-		src := copyMap(src)
-		go worker(src, prh.ESClient, prh.Config.ESIndex, prh.MDTPaths["rib"][i], Native, prh.Filter, prh.Enrich)
-	}	
-}
-
-func (prh *postReqHandler) MacAllHandler(w http.ResponseWriter, httpRequest *http.Request) {
-	src := getHttpBody(httpRequest)	
-
-	for i := range(prh.MDTPaths["mac-all"]) {
-		src := copyMap(src)
-		go worker(src, prh.ESClient, prh.Config.ESIndex, prh.MDTPaths["mac-all"][i], Native, prh.Filter, prh.Enrich)
-	}	
-}
-
-func (prh *postReqHandler) AdjacencyHandler(w http.ResponseWriter, httpRequest *http.Request) {
-	src := getHttpBody(httpRequest)	
-
-	for i := range(prh.MDTPaths["adjacency"]) {
-		src := copyMap(src)
-		go worker(src, prh.ESClient, prh.Config.ESIndex, prh.MDTPaths["adjacency"][i], Native, prh.Filter, prh.Enrich)
-	}	
-}
-
-func (prh *postReqHandler) EventHandler(w http.ResponseWriter, httpRequest *http.Request) {
-	src := getHttpBody(httpRequest)	
-
-	for i := range(prh.MDTPaths["event"]) {
-		src := copyMap(src)
-		go worker(src, prh.ESClient, prh.Config.ESIndex, prh.MDTPaths["event"][i], Event, prh.Filter, prh.Enrich)
-	}	
-}
-
-func (prh *postReqHandler) VxlanSysEps(w http.ResponseWriter, httpRequest *http.Request) {
-	src := getHttpBody(httpRequest)	
-
-	for i := range(prh.MDTPaths["vxlan:sys/eps"]) {
-		src := copyMap(src)
-		go worker(src, prh.ESClient, prh.Config.ESIndex, prh.MDTPaths["vxlan:sys/eps"][i], Cadence, prh.Filter, prh.Enrich)
-	}	
-}
-
-func (prh *postReqHandler) VxlanSysBD(w http.ResponseWriter, httpRequest *http.Request) {
-	src := getHttpBody(httpRequest)	
-
-	for i := range(prh.MDTPaths["vxlan:sys/bd"]) {
-		src := copyMap(src)
-		go worker(src, prh.ESClient, prh.Config.ESIndex, prh.MDTPaths["vxlan:sys/bd"][i], Cadence, prh.Filter, prh.Enrich)
-	}	
-}
-
-func (prh *postReqHandler) SysIntfHandler(w http.ResponseWriter, httpRequest *http.Request) {
-	src := getHttpBody(httpRequest)	
-
-	for i := range(prh.MDTPaths["interface:sys/intf"]) {
-		src := copyMap(src)
-		go worker(src, prh.ESClient, prh.Config.ESIndex, prh.MDTPaths["interface:sys/intf"][i], Cadence, prh.Filter, prh.Enrich)
-	}	
-}
-
-func (prh *postReqHandler) SysChHandler(w http.ResponseWriter, httpRequest *http.Request) {
-	src := getHttpBody(httpRequest)	
-
-	for i := range(prh.MDTPaths["environment:sys/ch"]) {
-		src := copyMap(src)
-		go worker(src, prh.ESClient, prh.Config.ESIndex, prh.MDTPaths["environment:sys/ch"][i], Cadence, prh.Filter, prh.Enrich)
-	}	
-}
-
-func (prh *postReqHandler) sysProcHandler(w http.ResponseWriter, httpRequest *http.Request) {
-	src := getHttpBody(httpRequest)	
-
-	for i := range(prh.MDTPaths["resources:sys/proc"]) {
-		src := copyMap(src)
-		go worker(src, prh.ESClient, prh.Config.ESIndex, prh.MDTPaths["resources:sys/proc"][i], Cadence, prh.Filter, prh.Enrich)
-	}	
-}
-
-func (prh *postReqHandler) sysProcSysHandler(w http.ResponseWriter, httpRequest *http.Request) {
-	src := getHttpBody(httpRequest)	
-
-	for i := range(prh.MDTPaths["resources:sys/procsys"]) {
-		src := copyMap(src)
-		go worker(src, prh.ESClient, prh.Config.ESIndex, prh.MDTPaths["resources:sys/procsys"][i], Cadence, prh.Filter, prh.Enrich)
-	}	
-}
-
-func main() {
-
-	ESClient, Config, MDTPaths, Filter, Enrich := initialize("config.json")
-
-	postReqHandler := &postReqHandler{ESClient: ESClient, Filter: Filter, Enrich: Enrich, Config: Config, MDTPaths: MDTPaths, Mode: 2}
-
-	http.HandleFunc("/network/sys/bgp", postReqHandler.SysBgp)
-/* 	http.HandleFunc("/network/sys/ospf", postReqHandler.SysOspf)
-	http.HandleFunc("/network/rib", postReqHandler.RIBHandler)
-	http.HandleFunc("/network/mac-all", postReqHandler.MacAllHandler)
-	http.HandleFunc("/network/adjacency", postReqHandler.AdjacencyHandler)
-	http.HandleFunc("/network/EVENT-LIST", postReqHandler.EventHandler)
-	http.HandleFunc("/network/vxlan:sys/eps", postReqHandler.VxlanSysEps)
-	http.HandleFunc("/network/vxlan:sys/bd", postReqHandler.VxlanSysBD)
-	http.HandleFunc("/network/interface:sys/intf", postReqHandler.SysIntfHandler)
-	http.HandleFunc("/network/environment:sys/ch", postReqHandler.SysChHandler) 
-	http.HandleFunc("/network/resources:sys/proc", postReqHandler.sysProcHandler)
-	http.HandleFunc("/network/resources:sys/procsys", postReqHandler.sysProcSysHandler) */
-
-	http.ListenAndServe(":11000", nil)
 }
