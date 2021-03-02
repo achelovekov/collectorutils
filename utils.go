@@ -57,11 +57,13 @@ type Path []struct {
 
 type MDTPaths map[string][]Path
 
-type MDTPathDefinitions []struct {
-	MdtPath      string `json:"mdtPath"`
-	MdtPathFiles []struct {
-		MdtPathFile string `json:"mdtPathFile"`
-	} `json:"mdtPathFiles"`
+type PathDefinitions []PathDefinition
+
+type PathDefinition struct {
+	Key   string `json:"key"`
+	Paths []struct {
+		Path string `json:"path"`
+	} `json:"paths"`
 }
 
 type Filter []struct {
@@ -259,7 +261,7 @@ func FlattenMap(src map[string]interface{}, path Path, pathIndex int, pathPassed
 
 func LoadMDTPaths(fileName string) MDTPaths {
 
-	var MDTPathDefinitions MDTPathDefinitions
+	var PathDefinitions PathDefinitions
 	MDTPaths := make(MDTPaths)
 
 	MDTPathDefinitionsFile, err := os.Open(fileName)
@@ -273,16 +275,16 @@ func LoadMDTPaths(fileName string) MDTPaths {
 		fmt.Println(err)
 	}
 
-	err = json.Unmarshal(MDTPathDefinitionsFileBytes, &MDTPathDefinitions)
+	err = json.Unmarshal(MDTPathDefinitionsFileBytes, &PathDefinitions)
 	if err != nil {
 		fmt.Println(err)
 	}
 
-	for _, v := range MDTPathDefinitions {
+	for _, v := range PathDefinitions {
 		var paths []Path
 
-		for _, v := range v.MdtPathFiles {
-			pathFile, err := os.Open(v.MdtPathFile)
+		for _, v := range v.Paths {
+			pathFile, err := os.Open(v.Path)
 			if err != nil {
 				fmt.Println(err)
 			}
@@ -297,7 +299,7 @@ func LoadMDTPaths(fileName string) MDTPaths {
 			paths = append(paths, path)
 		}
 
-		MDTPaths[v.MdtPath] = paths
+		MDTPaths[v.Key] = paths
 	}
 
 	return MDTPaths
