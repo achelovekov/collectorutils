@@ -232,6 +232,7 @@ func FlattenMap(src map[string]interface{}, path Path, pathIndex int, pathPassed
 				newHeader := CopyMap(header)
 				FilterMap(newHeader, filter)
 				EnrichMap(newHeader, enrich)
+				PrettyPrint(newHeader)
 				*buf = append(*buf, newHeader)
 			}
 		}
