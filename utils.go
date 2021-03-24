@@ -23,30 +23,25 @@ const (
 	Event = 2
 )
 
-type PostReqHandler struct {
-	ESClient *es.Client
-	Filter   Filter
-	Enrich   Enrich
-	Config   Config
-	MDTPaths MDTPaths
-	Mode     int
-}
-
-type ESmetaData struct {
-	Index struct {
-		IndexName string `json:"_index"`
-	} `json:"index"`
-}
-
 type Config struct {
 	ESHost       string `json:"ESHost"`
 	ESPort       string `json:"ESPort"`
-	MDTPathsFile string `json:"MDTPathsFile"`
+	KeysDefinitionFile string `json:"KeysDefinitionFile"`
 	ESIndex      string `json:"ESIndex"`
 	FilterFile   string `json:"FilterFile"`
 	EnrichFile   string `json:"EnrichFile"`
 }
 
+type KeysDefinition []KeyDefinition
+type KeyDefinition struct {
+	Key   string `json:"key"`
+	Paths []struct {
+		Path string `json:"path"`
+	} `json:"paths"`
+}
+
+type KeysMap map[string]Paths
+type Paths []Path
 type Path []struct {
 	Node []struct {
 		NodeName  string `json:"NodeName"`
@@ -55,15 +50,19 @@ type Path []struct {
 	} `json:"Node"`
 }
 
-type MDTPaths map[string][]Path
+type PostReqHandler struct {
+	ESClient *es.Client
+	Filter   Filter
+	Enrich   Enrich
+	Config   Config
+	KeysMap  KeysMap
+	Mode     int
+}
 
-type PathDefinitions []PathDefinition
-
-type PathDefinition struct {
-	Key   string `json:"key"`
-	Paths []struct {
-		Path string `json:"path"`
-	} `json:"paths"`
+type ESmetaData struct {
+	Index struct {
+		IndexName string `json:"_index"`
+	} `json:"index"`
 }
 
 type Filter []struct {
@@ -254,8 +253,7 @@ func FlattenMap(src map[string]interface{}, path Path, pathIndex int, pathPassed
 				newHeader := CopyMap(header)
 				FilterMap(newHeader, filter)
 				EnrichMap(newHeader, enrich)
-/* 				fmt.Println("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~Final:")
-				PrettyPrint(newHeader) */
+				PrettyPrint(newHeader)
 				*buf = append(*buf, newHeader)
 			}
 		}
@@ -281,29 +279,30 @@ func FlattenMap(src map[string]interface{}, path Path, pathIndex int, pathPassed
 	}
 }
 
-func LoadMDTPaths(fileName string) MDTPaths {
+func LoadKeysMap(fileName string) KeysMap {
 
-	var PathDefinitions PathDefinitions
-	MDTPaths := make(MDTPaths)
+	var KeysDefinition KeysDefinition
+	KeysMap := make(KeysMap)
 
-	MDTPathDefinitionsFile, err := os.Open(fileName)
+	KeysDefinitionFile, err := os.Open(fileName)
 	if err != nil {
 		fmt.Println(err)
 	}
-	defer MDTPathDefinitionsFile.Close()
+	defer KeysDefinitionFile.Close()
 
-	MDTPathDefinitionsFileBytes, err := ioutil.ReadAll(MDTPathDefinitionsFile)
-	if err != nil {
-		fmt.Println(err)
-	}
-
-	err = json.Unmarshal(MDTPathDefinitionsFileBytes, &PathDefinitions)
+	KeysDefinitionFileBytes, err := ioutil.ReadAll(KeysDefinitionFile)
 	if err != nil {
 		fmt.Println(err)
 	}
 
-	for _, v := range PathDefinitions {
-		var paths []Path
+	err = json.Unmarshal(KeysDefinitionFileBytes, &KeysDefinition)
+	if err != nil {
+		fmt.Println(fileName, "did not unmarshalled!")
+		fmt.Println(err)
+	}
+
+	for _, v := range KeysDefinition {
+		var Paths Paths
 
 		for _, v := range v.Paths {
 			pathFile, err := os.Open(v.Path)
@@ -313,24 +312,24 @@ func LoadMDTPaths(fileName string) MDTPaths {
 			defer pathFile.Close()
 
 			pathFileBytes, _ := ioutil.ReadAll(pathFile)
-			var path Path
-			err = json.Unmarshal(pathFileBytes, &path)
+			var Path Path
+			err = json.Unmarshal(pathFileBytes, &Path)
 			if err != nil {
 				fmt.Println(err)
 			}
-			paths = append(paths, path)
+			Paths = append(Paths, Path)
 		}
 
-		MDTPaths[v.Key] = paths
+		KeysMap[v.Key] = Paths
 	}
 
-	return MDTPaths
+	return KeysMap
 }
 
-func Initialize(configFile string) (*es.Client, Config, MDTPaths, Filter, Enrich) {
+func Initialize(configFile string) (*es.Client, Config, KeysMap, Filter, Enrich) {
 
 	var Config Config
-	var MDTPaths MDTPaths
+	var KeysMap KeysMap
 	var Filter Filter
 	var Enrich Enrich
 
@@ -347,7 +346,9 @@ func Initialize(configFile string) (*es.Client, Config, MDTPaths, Filter, Enrich
 		fmt.Println(err)
 	}
 
-	MDTPaths = LoadMDTPaths(Config.MDTPathsFile)
+	fmt.Println(Config)
+
+	KeysMap = LoadKeysMap(Config.KeysDefinitionFile)
 
 	FilterFile, err := os.Open(Config.FilterFile)
 	if err != nil {
@@ -380,7 +381,7 @@ func Initialize(configFile string) (*es.Client, Config, MDTPaths, Filter, Enrich
 		log.Fatalf("error: %s", error)
 	}
 
-	return esClient, Config, MDTPaths, Filter, Enrich
+	return esClient, Config, KeysMap, Filter, Enrich
 }
 
 func GetHttpBody(httpRequest *http.Request) map[string]interface{} {
