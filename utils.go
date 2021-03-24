@@ -188,7 +188,11 @@ func FlattenMap(src map[string]interface{}, path Path, pathIndex int, pathPassed
 	keysDive := make([]string, 0)
 	keysPass := make([]string, 0)
 	keysCombine := make([]string, 0)
+	keys := make([]string, 0)
 	pathPassed = CopySlice(pathPassed)
+
+/* 	fmt.Println("pathIndex:", pathIndex) */
+
 	for k, v := range src {
 		switch sType := reflect.ValueOf(v).Type().Kind(); sType {
 		case reflect.String:
@@ -202,16 +206,26 @@ func FlattenMap(src map[string]interface{}, path Path, pathIndex int, pathPassed
 			
 		case reflect.Float64:
 			if len(pathPassed) == 0 {
-				header[k] = ToNum(v)
+				header[k] = v.(float64)
 			} else if len(pathPassed) == 1 {
-				header[pathPassed[0]+"."+k] = ToNum(v)
+				header[pathPassed[0]+"."+k] = v.(float64)
 			} else {
 				header[pathPassed[len(pathPassed)-mode]+"."+k] = v.(float64)
+			}		
+		
+		case reflect.Bool:
+			if len(pathPassed) == 0 {
+				header[k] = v.(bool)
+			} else if len(pathPassed) == 1 {
+				header[pathPassed[0]+"."+k] = v.(bool)
+			} else {
+				header[pathPassed[len(pathPassed)-mode]+"."+k] = v.(bool)
 			}		
 
 		default:
 			if pathIndex < len(path) {
 				for _, v := range path[pathIndex].Node {
+/* 					fmt.Println("k", k, "v.NodeName", v.NodeName) */
 					if v.NodeName == k || v.NodeName == "any" {
 						if v.ToDive {
 							keysDive = append(keysDive, k)
@@ -226,23 +240,30 @@ func FlattenMap(src map[string]interface{}, path Path, pathIndex int, pathPassed
 		}
 	}
 
+/* 	PrettyPrint(header)
+
+	fmt.Println("keysDive:", keysDive, "keysCombine:", keysCombine, "keysPass:", keysPass) */
+			
+	keys = append(keysDive, keysCombine...)
+	keys = append(keys, keysPass...)
+/* 	fmt.Println("keys:", keys) */
+
 	if pathIndex == len(path) {
 		for _, v := range path[pathIndex-1].Node {
 			if pathPassed[len(pathPassed)-1] == v.NodeName && !v.ToCombine {
 				newHeader := CopyMap(header)
 				FilterMap(newHeader, filter)
 				EnrichMap(newHeader, enrich)
-				PrettyPrint(newHeader)
+/* 				fmt.Println("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~Final:")
+				PrettyPrint(newHeader) */
 				*buf = append(*buf, newHeader)
 			}
 		}
 	} else {
-		keys := make([]string, 0)
-		keys = append(keysDive, keysCombine...)
-		keys = append(keys, keysPass...)
-
-		if pathIndex < len(path) {
+		if pathIndex < len(path) && len(keys) > 0 {
 			for _, k := range keys {
+/* 				fmt.Println("go for key:", k)
+				fmt.Println("=======================================================") */
 				pathPassed = append(pathPassed, k)
 				switch sType := reflect.ValueOf(src[k]).Type().Kind(); sType {
 				case reflect.Map:
