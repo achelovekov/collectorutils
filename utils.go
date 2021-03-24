@@ -326,10 +326,9 @@ func LoadKeysMap(fileName string) KeysMap {
 	return KeysMap
 }
 
-func Initialize(configFile string) (*es.Client, Config, KeysMap, Filter, Enrich) {
+func Initialize(configFile string) (Config, Filter, Enrich) {
 
 	var Config Config
-	var KeysMap KeysMap
 	var Filter Filter
 	var Enrich Enrich
 
@@ -347,8 +346,6 @@ func Initialize(configFile string) (*es.Client, Config, KeysMap, Filter, Enrich)
 	}
 
 	fmt.Println(Config)
-
-	KeysMap = LoadKeysMap(Config.KeysDefinitionFile)
 
 	FilterFile, err := os.Open(Config.FilterFile)
 	if err != nil {
@@ -376,12 +373,7 @@ func Initialize(configFile string) (*es.Client, Config, KeysMap, Filter, Enrich)
 		fmt.Println(err)
 	}
 
-	esClient, error := ESConnect(Config.ESHost, Config.ESPort)
-	if error != nil {
-		log.Fatalf("error: %s", error)
-	}
-
-	return esClient, Config, KeysMap, Filter, Enrich
+	return Config, Filter, Enrich
 }
 
 func GetHttpBody(httpRequest *http.Request) map[string]interface{} {
