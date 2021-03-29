@@ -18,18 +18,18 @@ import (
 )
 
 const (
-	Native = 1
+	Native  = 1
 	Cadence = 2
-	Event = 2
+	Event   = 2
 )
 
 type Config struct {
-	ESHost       string `json:"ESHost"`
-	ESPort       string `json:"ESPort"`
+	ESHost             string `json:"ESHost"`
+	ESPort             string `json:"ESPort"`
 	KeysDefinitionFile string `json:"KeysDefinitionFile"`
-	ESIndex      string `json:"ESIndex"`
-	FilterFile   string `json:"FilterFile"`
-	EnrichFile   string `json:"EnrichFile"`
+	ESIndex            string `json:"ESIndex"`
+	FilterFile         string `json:"FilterFile"`
+	EnrichFile         string `json:"EnrichFile"`
 }
 
 type KeysDefinition []KeyDefinition
@@ -80,6 +80,34 @@ type Enrich []struct {
 }
 
 type ESClient *es.Client
+
+type Inventory []HostMetaData
+type HostMetaData struct {
+	Host struct {
+		URL      string `json:"url"`
+		Hostname string `json:"hostname"`
+		Username string `json:"username"`
+		Password string `json:"password"`
+	} `json:"host"`
+}
+
+func LoadInventory(fineName string) Inventory {
+	var Inventory Inventory
+	InventoryFile, err := os.Open(fineName)
+	if err != nil {
+		fmt.Println(err)
+	}
+	defer InventoryFile.Close()
+
+	InventoryFileBytes, _ := ioutil.ReadAll(InventoryFile)
+
+	err = json.Unmarshal(InventoryFileBytes, &Inventory)
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	return Inventory
+}
 
 func ESConnect(ipaddr string, port string) (*es.Client, error) {
 
@@ -183,14 +211,26 @@ func CopyMap(ma map[string]interface{}) map[string]interface{} {
 	return newMap
 }
 
-func FlattenMap(src map[string]interface{}, path Path, pathIndex int, pathPassed []string, mode int, header map[string]interface{}, buf *[]map[string]interface{}, filter Filter, enrich Enrich) {
+func FlattenMap(
+	src map[string]interface{},
+	path Path,
+	pathIndex int,
+	pathPassed []string,
+	mode int,
+	header map[string]interface{},
+	buf *[]map[string]interface{},
+	filter Filter,
+	enrich Enrich,
+	keysLeftFromPrevLayer bool,
+) {
 	keysDive := make([]string, 0)
 	keysPass := make([]string, 0)
 	keysCombine := make([]string, 0)
 	keys := make([]string, 0)
 	pathPassed = CopySlice(pathPassed)
+	keysLeft := bool(false)
 
-/* 	fmt.Println("pathIndex:", pathIndex) */
+	/* 	fmt.Println("pathIndex:", pathIndex) */
 
 	for k, v := range src {
 		switch sType := reflect.ValueOf(v).Type().Kind(); sType {
@@ -202,7 +242,7 @@ func FlattenMap(src map[string]interface{}, path Path, pathIndex int, pathPassed
 			} else {
 				header[pathPassed[len(pathPassed)-mode]+"."+k] = ToNum(v)
 			}
-			
+
 		case reflect.Float64:
 			if len(pathPassed) == 0 {
 				header[k] = v.(float64)
@@ -210,8 +250,8 @@ func FlattenMap(src map[string]interface{}, path Path, pathIndex int, pathPassed
 				header[pathPassed[0]+"."+k] = v.(float64)
 			} else {
 				header[pathPassed[len(pathPassed)-mode]+"."+k] = v.(float64)
-			}		
-		
+			}
+
 		case reflect.Bool:
 			if len(pathPassed) == 0 {
 				header[k] = v.(bool)
@@ -219,12 +259,12 @@ func FlattenMap(src map[string]interface{}, path Path, pathIndex int, pathPassed
 				header[pathPassed[0]+"."+k] = v.(bool)
 			} else {
 				header[pathPassed[len(pathPassed)-mode]+"."+k] = v.(bool)
-			}		
+			}
 
 		default:
 			if pathIndex < len(path) {
 				for _, v := range path[pathIndex].Node {
-/* 					fmt.Println("k", k, "v.NodeName", v.NodeName) */
+					/* 					fmt.Println("k", k, "v.NodeName", v.NodeName) */
 					if v.NodeName == k || v.NodeName == "any" {
 						if v.ToDive {
 							keysDive = append(keysDive, k)
@@ -239,39 +279,41 @@ func FlattenMap(src map[string]interface{}, path Path, pathIndex int, pathPassed
 		}
 	}
 
-/* 	PrettyPrint(header)
+	/* 	fmt.Println("keysDive:", keysDive, "keysCombine:", keysCombine, "keysPass:", keysPass) */
 
-	fmt.Println("keysDive:", keysDive, "keysCombine:", keysCombine, "keysPass:", keysPass) */
-			
 	keys = append(keysDive, keysCombine...)
 	keys = append(keys, keysPass...)
-/* 	fmt.Println("keys:", keys) */
+	/* 	fmt.Println("keys:", keys)
+	   	fmt.Println("len(src):", len(src), "len(keys):", len(keys)) */
+	if len(src) > len(keys) {
+		keysLeft = true
+	}
 
-	if pathIndex == len(path) {
+	if pathIndex == len(path) && !keysLeftFromPrevLayer {
 		for _, v := range path[pathIndex-1].Node {
 			if pathPassed[len(pathPassed)-1] == v.NodeName && !v.ToCombine {
 				newHeader := CopyMap(header)
 				FilterMap(newHeader, filter)
 				EnrichMap(newHeader, enrich)
-				PrettyPrint(newHeader)
+				/* 				PrettyPrint(newHeader) */
 				*buf = append(*buf, newHeader)
 			}
 		}
 	} else {
 		if pathIndex < len(path) && len(keys) > 0 {
 			for _, k := range keys {
-/* 				fmt.Println("go for key:", k)
-				fmt.Println("=======================================================") */
+				/* 				fmt.Println("go for key:", k)
+				   				fmt.Println("=======================================================") */
 				pathPassed = append(pathPassed, k)
 				switch sType := reflect.ValueOf(src[k]).Type().Kind(); sType {
 				case reflect.Map:
 					src := src[k].(map[string]interface{})
-					FlattenMap(src, path, pathIndex+1, pathPassed, mode, header, buf, filter, enrich)
+					FlattenMap(src, path, pathIndex+1, pathPassed, mode, header, buf, filter, enrich, keysLeft)
 				case reflect.Slice:
 					src := reflect.ValueOf(src[k])
 					for i := 0; i < src.Len(); i++ {
 						src := src.Index(i).Interface().(map[string]interface{})
-						FlattenMap(src, path, pathIndex+1, pathPassed, mode, header, buf, filter, enrich)
+						FlattenMap(src, path, pathIndex+1, pathPassed, mode, header, buf, filter, enrich, keysLeft)
 					}
 				}
 			}
@@ -345,8 +387,6 @@ func Initialize(configFile string) (Config, Filter, Enrich) {
 		fmt.Println(err)
 	}
 
-	fmt.Println(Config)
-
 	FilterFile, err := os.Open(Config.FilterFile)
 	if err != nil {
 		fmt.Println(err)
@@ -389,4 +429,41 @@ func GetHttpBody(httpRequest *http.Request) map[string]interface{} {
 	}
 
 	return src
+}
+
+type Pair struct {
+	SrcType string
+	DstType string
+}
+
+func StringToInt64(src interface{}) interface{} {
+	i, _ := strconv.ParseInt(src.(string), 10, 64)
+	return i
+}
+
+func Int64ToString(src interface{}) interface{} {
+	s := strconv.FormatInt(src.(int64), 10)
+	return s
+}
+
+type fn func(interface{}) interface{}
+type ConversionMap map[Pair]fn
+
+func CreateConversionMap() ConversionMap {
+	M := make(map[Pair]fn)
+
+	P1 := Pair{
+		SrcType: "int64",
+		DstType: "string",
+	}
+
+	P2 := Pair{
+		SrcType: "string",
+		DstType: "int64",
+	}
+
+	M[P1] = Int64ToString
+	M[P2] = StringToInt64
+
+	return M
 }
