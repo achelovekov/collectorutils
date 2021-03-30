@@ -42,12 +42,17 @@ type KeyDefinition struct {
 
 type KeysMap map[string]Paths
 type Paths []Path
-type Path []struct {
-	Node []struct {
-		NodeName  string `json:"NodeName"`
-		ToDive    bool   `json:"ToDive"`
-		ToCombine bool   `json:"ToCombine"`
-	} `json:"Node"`
+type Path struct {
+	PathOptions struct {
+		IgnoreTail bool `json:"IgnoreTail"`
+	} `json:"PathOptions"`
+	PathData []struct {
+		Node []struct {
+			NodeName  string `json:"NodeName"`
+			ToDive    bool   `json:"ToDive"`
+			ToCombine bool   `json:"ToCombine"`
+		} `json:"Node"`
+	} `json:"PathData"`
 }
 
 type PostReqHandler struct {
@@ -262,10 +267,10 @@ func FlattenMap(
 			}
 
 		default:
-			if pathIndex < len(path) {
-				for _, v := range path[pathIndex].Node {
+			if pathIndex < len(path.PathData) {
+				for _, v := range path.PathData[pathIndex].Node {
 					/* 					fmt.Println("k", k, "v.NodeName", v.NodeName) */
-					if v.NodeName == k || v.NodeName == "any" {
+					if k == v.NodeName || v.NodeName == "any" {
 						if v.ToDive {
 							keysDive = append(keysDive, k)
 						} else if v.ToCombine {
@@ -289,18 +294,18 @@ func FlattenMap(
 		keysLeft = true
 	}
 
-	if pathIndex == len(path) && !keysLeftFromPrevLayer {
-		for _, v := range path[pathIndex-1].Node {
+	if pathIndex == len(path.PathData) && (!keysLeftFromPrevLayer || path.PathOptions.IgnoreTail) {
+		for _, v := range path.PathData[pathIndex-1].Node {
 			if pathPassed[len(pathPassed)-1] == v.NodeName && !v.ToCombine {
 				newHeader := CopyMap(header)
 				FilterMap(newHeader, filter)
 				EnrichMap(newHeader, enrich)
-				/* 				PrettyPrint(newHeader) */
+				PrettyPrint(newHeader)
 				*buf = append(*buf, newHeader)
 			}
 		}
 	} else {
-		if pathIndex < len(path) && len(keys) > 0 {
+		if pathIndex < len(path.PathData) && len(keys) > 0 {
 			for _, k := range keys {
 				/* 				fmt.Println("go for key:", k)
 				   				fmt.Println("=======================================================") */
