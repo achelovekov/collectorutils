@@ -34,10 +34,10 @@ type Config struct {
 
 type KeysDefinition []KeyDefinition
 type KeyDefinition struct {
-	Key   string `json:"key"`
+	Key   string `json:"Key"`
 	Paths []struct {
-		Path string `json:"path"`
-	} `json:"paths"`
+		Path string `json:"Path"`
+	} `json:"Paths"`
 }
 
 type KeysMap map[string]Paths
@@ -300,7 +300,7 @@ func FlattenMap(
 				newHeader := CopyMap(header)
 				FilterMap(newHeader, filter)
 				EnrichMap(newHeader, enrich)
-				PrettyPrint(newHeader)
+				/* 				PrettyPrint(newHeader) */
 				*buf = append(*buf, newHeader)
 			}
 		}
